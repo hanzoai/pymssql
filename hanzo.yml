@@ -1,0 +1,33 @@
+# Canonical CI/CD config for hanzoai/pymssql — read by the hanzoai/ci reusable
+# (.hanzo/workflows/cicd.yml) and by platform.hanzo.ai.
+#
+# No `images:`: pymssql is a Python extension module, not a service.
+#
+# What this gate proves is the thing that actually breaks in this repo: the C
+# extension still compiles against FreeTDS, and the sdist still assembles. That
+# is a real signal on every push, which is more than the wheel matrix gave —
+# its upload job was guarded `github.repository_owner == 'pymssql'`, so from
+# this fork it built wheels nothing ever collected.
+#
+# freetds-dev comes from apt because the extension links against it; upstream
+# reaches the same place by vendoring FreeTDS into a manylinux image, which
+# needs a container this gate does not have.
+#
+# The suite in tests/ is not run here: every case opens a connection to a live
+# SQL Server, so it asserts a database exists rather than that pymssql works.
+test:
+  - name: build extension and sdist
+    run: |
+      set -euo pipefail
+      sudo apt-get update
+      sudo apt-get install -y --no-install-recommends freetds-dev
+      command -v uv >/dev/null 2>&1 || {
+        curl -fsSL https://astral.sh/uv/install.sh | sh
+        export PATH="$HOME/.local/bin:$PATH"
+      }
+      uv venv .venv
+      . .venv/bin/activate
+      uv pip install build setuptools setuptools_scm wheel cython
+      python -m build --sdist --outdir dist
+      uv pip install -e .
+      python -c "import pymssql; print('pymssql', pymssql.__version__)"
